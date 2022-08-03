@@ -113,8 +113,6 @@ jobs:
     services:
       pool:
         image: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-pool:latest
-        ports: 
-          - 9701-9708:9701-9708
     steps:
       - name: Check out code
         uses: actions/checkout@v2
@@ -137,10 +135,14 @@ jobs:
       #     args: --manifest-path libsovtoken/Cargo.toml
 
       - name: Test Indy_Pool running
-        run: docker ps
+        run: |
+          docker ps
+          docker network ls
 
       - name: Test libsovtoken
         uses: actions-rs/cargo@v1
+        env:
+          TEST_POOL_IP: pool
         with: 
           command: test
           args: --manifest-path libsovtoken/Cargo.toml -- --test-threads=1
