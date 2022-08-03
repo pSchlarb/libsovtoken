@@ -1,0 +1,84 @@
+name: libsovtoken Push
+
+on:
+  push:
+    branches:
+      - master
+      - Gitpod
+
+      
+jobs:
+  workflow-setup:
+    name: Initialize Workflow
+    runs-on: ubuntu-latest
+    outputs:
+      CACHE_KEY_BUILD: ${{ steps.setup.outputs.CACHE_KEY_BUILD }}
+      UBUNTU_VERSION: ${{ steps.setup.outputs.UBUNTU_VERSION }}
+      # Expose the lowercase version of the GitHub repository name
+      # to all subsequent jobs that reference image repositories
+      # as the push and pull operations require the URL of the repository
+      # to be in lowercase.
+      GITHUB_REPOSITORY_NAME: ${{ steps.setup.outputs.GITHUB_REPOSITORY_NAME }}
+      distribution: ${{ steps.setup.outputs.distribution }}
+      publish: ${{ steps.setup.outputs.publish }}
+    steps:
+      - name: checkout source code
+        uses: actions/checkout@v2
+      - name: setup
+        id: setup
+        uses: hyperledger/indy-shared-gha/.github/actions/workflow-setup@v1
+
+  lint:
+     name: Lint
+     needs: [workflow-setup]
+     uses: hyperledger/indy-shared-gha/.github/workflows/lint.yaml@v1
+
+  build-image:
+    name: Create DIND Image
+    needs: [workflow-setup]
+    if: ${{ always() }}
+    uses: hyperledger/indy-shared-gha/.github/workflows/buildimage.yaml@v1
+    with:
+      CACHE_KEY_BUILD: ${{ needs.workflow-setup.outputs.CACHE_KEY_BUILD }}
+      DOCKER_IMAGE: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-dind
+      UBUNTU_VERSION: ${{ needs.workflow-setup.outputs.UBUNTU_VERSION }}
+    
+  build-and-test:
+    name: Build and build-and-test
+    needs: [build-image]
+    runs-on: ubuntu-latest
+    container: 
+      image: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-dind:latest
+      options: --privileged
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Check Libindydir
+        run: echo $LIBINDY_DIR
+
+      - name: Build Indypool and start it
+        run: |
+          docker build -t indy_pool -f devops/indy-pool/Dockerfile devops/indy-pool
+          docker run -itd -p 9701-9708:9701-9708 indy_pool
+
+      - name: Setup Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      
+      - name: Lint with clippy
+        uses: actions-rs/cargo@v1
+        continue-on-error: true
+        with:
+          command: clippy
+          args: --manifest-path libsovtoken/Cargo.toml
+
+      - name: Test libsovtoken
+        uses: actions-rs/cargo@v1
+        with: 
+          command: test
+          args: --manifest-path libsovtoken/Cargo.toml -- --test-threads=1
+      
