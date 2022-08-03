@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       CACHE_KEY_BUILD: ${{ steps.setup.outputs.CACHE_KEY_BUILD }}
+      CACHE_KEY_POOL: ${{ steps.pool_setup.outputs.CACHE_KEY_POOL }}
       UBUNTU_VERSION: ${{ steps.setup.outputs.UBUNTU_VERSION }}
       # Expose the lowercase version of the GitHub repository name
       # to all subsequent jobs that reference image repositories
@@ -27,6 +28,9 @@ jobs:
       - name: setup
         id: setup
         uses: hyperledger/indy-shared-gha/.github/actions/workflow-setup@v1
+      - name: setup pool data
+        id: pool_setup
+        run: echo "::set-output name=CACHE_KEY_POOL::${{ hashFiles('devops/indy-pool/Dockerfile') }}"
 
 
   build-image:
@@ -38,26 +42,85 @@ jobs:
       CACHE_KEY_BUILD: ${{ needs.workflow-setup.outputs.CACHE_KEY_BUILD }}
       DOCKER_IMAGE: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-dind
       UBUNTU_VERSION: ${{ needs.workflow-setup.outputs.UBUNTU_VERSION }}
+  
+  build-pool-image:
+    name: Create Pool Image
+    needs: [workflow-setup]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    env:
+      CACHE_KEY_POOL: ${{ needs.workflow-setup.outputs.CACHE_KEY_POOL }}
+      DOCKER_IMAGE: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-pool
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v2
+
+      - name: Try load from cache
+        id: cache-image
+        uses: actions/cache@v2
+        with:
+          path: ${GITHUB_WORKSPACE}/cache
+          key: ${{ env.CACHE_KEY_POOL }}
+
+      - name: Prepare image labels and tags
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        id: prep
+        shell: bash
+        run: |
+          TAGS="${DOCKER_IMAGE}:latest"
+          echo ::set-output name=tags::${TAGS}
+          echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+      - name: Log into the GitHub Container Registry
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build and push image
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        uses: docker/build-push-action@v2
+        with:
+          context: devops/indy-pool/
+          file: devops/indy-pool/Dockerfile
+          no-cache: true
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.prep.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.event.repository.html_url }}
+            org.opencontainers.image.created=${{ steps.prep.outputs.created }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Touch Cache
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ${GITHUB_WORKSPACE}/cache
+          touch ${GITHUB_WORKSPACE}/cache/${{ env.CACHE_KEY_BUILD }}
     
   build-and-test:
     name: Build and build-and-test
-    needs: [workflow-setup,build-image]
+    needs: [workflow-setup,build-image, build-pool-image]
     runs-on: ubuntu-latest
     container: 
       image: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-dind:latest
       options: --privileged
+    services:
+      pool:
+        image: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-pool:latest
+        ports: 
+          - 9701-9708:9701-9708
     steps:
       - name: Check out code
         uses: actions/checkout@v2
 
       - name: Check Libindydir
         run: echo $LIBINDY_DIR
-
-      - name: Build Indypool and start it
-        run: |
-          docker build -t indy_pool -f devops/indy-pool/Dockerfile devops/indy-pool
-          docker run -itd -p 9701-9708:9701-9708 indy_pool
-          docker ps
 
       - name: Setup Rust Toolchain
         uses: actions-rs/toolchain@v1
@@ -72,12 +135,13 @@ jobs:
       #   with:
       #     command: clippy
       #     args: --manifest-path libsovtoken/Cargo.toml
+
       - name: Test Indy_Pool running
         run: docker ps
 
-      # - name: Test libsovtoken
-      #   uses: actions-rs/cargo@v1
-      #   with: 
-      #     command: test
-      #     args: --manifest-path libsovtoken/Cargo.toml -- --test-threads=1
+      - name: Test libsovtoken
+        uses: actions-rs/cargo@v1
+        with: 
+          command: test
+          args: --manifest-path libsovtoken/Cargo.toml -- --test-threads=1
       
