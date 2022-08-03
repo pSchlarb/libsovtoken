@@ -57,6 +57,7 @@ jobs:
         run: |
           docker build -t indy_pool -f devops/indy-pool/Dockerfile devops/indy-pool
           docker run -itd -p 9701-9708:9701-9708 indy_pool
+          docker ps
 
       - name: Setup Rust Toolchain
         uses: actions-rs/toolchain@v1
@@ -65,16 +66,18 @@ jobs:
           override: true
           components: rustfmt, clippy
       
-      - name: Lint with clippy
-        uses: actions-rs/cargo@v1
-        continue-on-error: true
-        with:
-          command: clippy
-          args: --manifest-path libsovtoken/Cargo.toml
+      # - name: Lint with clippy
+      #   uses: actions-rs/cargo@v1
+      #   continue-on-error: true
+      #   with:
+      #     command: clippy
+      #     args: --manifest-path libsovtoken/Cargo.toml
+      - name: Test Indy_Pool running
+        run: docker ps
 
-      - name: Test libsovtoken
-        uses: actions-rs/cargo@v1
-        with: 
-          command: test
-          args: --manifest-path libsovtoken/Cargo.toml -- --test-threads=1
+      # - name: Test libsovtoken
+      #   uses: actions-rs/cargo@v1
+      #   with: 
+      #     command: test
+      #     args: --manifest-path libsovtoken/Cargo.toml -- --test-threads=1
       
