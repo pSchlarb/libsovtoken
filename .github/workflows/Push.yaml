@@ -28,10 +28,6 @@ jobs:
         id: setup
         uses: hyperledger/indy-shared-gha/.github/actions/workflow-setup@v1
 
-  lint:
-     name: Lint
-     needs: [workflow-setup]
-     uses: hyperledger/indy-shared-gha/.github/workflows/lint.yaml@v1
 
   build-image:
     name: Create DIND Image
@@ -45,7 +41,7 @@ jobs:
     
   build-and-test:
     name: Build and build-and-test
-    needs: [build-image]
+    needs: [workflow-setup,build-image]
     runs-on: ubuntu-latest
     container: 
       image: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-dind:latest
