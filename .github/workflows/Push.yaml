@@ -47,63 +47,11 @@ jobs:
     name: Create Pool Image
     needs: [workflow-setup]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/reuseable_build_pool.yaml
+    with:
       CACHE_KEY_POOL: ${{ needs.workflow-setup.outputs.CACHE_KEY_POOL }}
       DOCKER_IMAGE: ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-pool
-    steps:
-      - name: Git checkout
-        uses: actions/checkout@v2
 
-      - name: Try load from cache
-        id: cache-image
-        uses: actions/cache@v2
-        with:
-          path: ${GITHUB_WORKSPACE}/cache
-          key: ${{ env.CACHE_KEY_POOL }}
-
-      - name: Prepare image labels and tags
-        if: steps.cache-image.outputs.cache-hit != 'true'
-        id: prep
-        shell: bash
-        run: |
-          TAGS="${DOCKER_IMAGE}:latest"
-          echo ::set-output name=tags::${TAGS}
-          echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-
-      - name: Log into the GitHub Container Registry
-        if: steps.cache-image.outputs.cache-hit != 'true'
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        if: steps.cache-image.outputs.cache-hit != 'true'
-        uses: docker/setup-buildx-action@v1
-
-      - name: Build and push image
-        if: steps.cache-image.outputs.cache-hit != 'true'
-        uses: docker/build-push-action@v2
-        with:
-          context: devops/indy-pool/
-          file: devops/indy-pool/Dockerfile
-          no-cache: true
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.prep.outputs.tags }}
-          build-args: pool_ip=192.168.0.2
-          labels: |
-            org.opencontainers.image.source=${{ github.event.repository.html_url }}
-            org.opencontainers.image.created=${{ steps.prep.outputs.created }}
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      - name: Touch Cache
-        if: steps.cache-image.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ${GITHUB_WORKSPACE}/cache
-          touch ${GITHUB_WORKSPACE}/cache/${{ env.CACHE_KEY_BUILD }}
-    
   build-and-test:
     name: Build and build-and-test
     needs: [workflow-setup,build-image, build-pool-image]
@@ -123,9 +71,6 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check Libindydir
-        run: echo $LIBINDY_DIR
-
       - name: Setup Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -133,12 +78,12 @@ jobs:
           override: true
           components: rustfmt, clippy
       
-      # - name: Lint with clippy
-      #   uses: actions-rs/cargo@v1
-      #   continue-on-error: true
-      #   with:
-      #     command: clippy
-      #     args: --manifest-path libsovtoken/Cargo.toml
+      - name: Lint with clippy
+        uses: actions-rs/cargo@v1
+        continue-on-error: true
+        with:
+          command: clippy
+          args: --manifest-path libsovtoken/Cargo.toml
 
       - name: Set up Indy Pool and Docker network
         run: |
@@ -146,12 +91,6 @@ jobs:
           docker run -itd -p 9701-9708:9701-9708 --network poolnet --ip 192.168.0.2 ghcr.io/${{ needs.workflow-setup.outputs.GITHUB_REPOSITORY_NAME }}/libsovtoken-pool:latest
           docker network connect poolnet $(cat /etc/hostname)
           
-      - name: Test Indy_Pool running
-        run: |
-          docker ps
-          docker network ls
-          docker network inspect poolnet
-
       - name: Test libsovtoken
         uses: actions-rs/cargo@v1
         env:
