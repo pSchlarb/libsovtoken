@@ -99,3 +99,14 @@ jobs:
           command: test
           args: --manifest-path libsovtoken/Cargo.toml -- --test-threads=1
       
+      - name: Build 
+        uses: actions-rs/cargo@v1
+        with: 
+          command: build 
+          args: --release --manifest-path libsovtoken/Cargo.toml
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: libsovtokenbuild
+          path: libsovtoken/target/release
+          retention-days: 5
