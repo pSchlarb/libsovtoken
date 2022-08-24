@@ -111,6 +111,25 @@ jobs:
           command: build 
           args: --release --manifest-path libsovtoken/Cargo.toml
 
+      - name: Install cargo deb
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-deb
+
+      - name: Build deb package
+        uses: actions-rs/cargo@v1
+        with: 
+          command: deb 
+          args: --manifest-path libsovtoken/Cargo.toml
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v2
+        with:
+          name: libsovtoken-deb
+          path: libsovtoken/target/debian/*.deb
+          retention-days: 5
+          
       - uses: actions/upload-artifact@v2
         with:
           name: libsovtoken-build
