@@ -1,6 +1,7 @@
 [package]
 name = "libsovtoken"
-
+homepage= "https://github.com/sovrin-foundation/libsovtoken"
+license = "Apache 2.0"
 version = "1.0.5"
 
 authors = [
@@ -56,3 +57,7 @@ overflow-checks = false
 [features]
 default = ["integration"]
 integration = []
+
+[package.metadata.deb]
+depends = "libindy ( = 1.15.0~1625-bionic )"
+maintainer = "Sovrin Foundation <repo@sovrin.org>"
