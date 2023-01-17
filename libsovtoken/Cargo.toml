@@ -2,7 +2,7 @@
 name = "libsovtoken"
 homepage= "https://github.com/sovrin-foundation/libsovtoken"
 license = "Apache-2.0"
-version = "1.0.5"
+version = "1.0.5-rc3"
 
 authors = [
   "Matt Raffel <matt.raffel@evernym.com",
